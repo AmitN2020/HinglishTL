@@ -1,0 +1,8 @@
+-r ../requirements.txt
+fastapi>=0.115,<1
+uvicorn[standard]>=0.32,<1
+openai>=1.54,<2
+transformers>=4.46,<5
+torch>=2.4
+IndicTransToolkit @ git+https://github.com/VarunGumma/IndicTransToolkit.git
+ai4bharat-transliteration>=0.5
