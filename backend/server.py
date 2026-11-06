@@ -122,12 +122,54 @@ def load_translation_model() -> None:
     ).cuda()
     _processor = IndicProcessor(inference=True)
 
+    # Disable KV caching on IndicTrans2 for modern transformers compatibility
+    _translator.config.use_cache = False
+    if hasattr(_translator, "generation_config") and _translator.generation_config is not None:
+        _translator.generation_config.use_cache = False
+    _translator._supports_cache_class = False
+
+    # Guard decoder forward against NoneType past_key_values indexing in modern transformers
+    decoder = getattr(_translator, "decoder", None) or getattr(getattr(_translator, "model", None), "decoder", None)
+    if decoder is not None:
+        orig_decoder_forward = decoder.forward
+
+        def safe_decoder_forward(*args, **kwargs):
+            if "past_key_values" in kwargs:
+                pkv = kwargs["past_key_values"]
+                if pkv is not None:
+                    try:
+                        if len(pkv) == 0 or pkv[0] is None or pkv[0][0] is None:
+                            kwargs["past_key_values"] = None
+                    except Exception:
+                        kwargs["past_key_values"] = None
+            elif len(args) > 4:
+                pkv = args[4]
+                if pkv is not None:
+                    try:
+                        if len(pkv) == 0 or pkv[0] is None or pkv[0][0] is None:
+                            args = args[:4] + (None,) + args[5:]
+                    except Exception:
+                        args = args[:4] + (None,) + args[5:]
+            return orig_decoder_forward(*args, **kwargs)
+
+        decoder.forward = safe_decoder_forward
+
 
 def translate_hindi_to_english(text: str) -> str:
+    if not text or not text.strip():
+        return ""
     load_translation_model()
+    import torch
+
     prepared = _processor.preprocess_batch([text], src_lang="hin_Deva", tgt_lang="eng_Latn")
     inputs = _tokenizer(prepared, return_tensors="pt", padding=True, truncation=True).to("cuda")
-    generated = _translator.generate(**inputs, num_beams=5, max_new_tokens=256)
+    with torch.inference_mode():
+        generated = _translator.generate(
+            **inputs,
+            num_beams=5,
+            max_new_tokens=256,
+            use_cache=False,
+        )
     decoded = _tokenizer.batch_decode(generated, skip_special_tokens=True)
     return normalize_text(_processor.postprocess_batch(decoded, lang="eng_Latn")[0])
 
