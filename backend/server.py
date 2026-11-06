@@ -1,7 +1,7 @@
 """FastAPI inference service intended for a GPU-backed Colab session.
 
-Start Param-1 separately with vLLM, then run this server.  The service keeps all
-model-specific code off the Streamlit machine and exposes one stable /assist API.
+All three models load lazily in this process. Param-1 uses its Transformers
+implementation directly because its custom architecture is not vLLM-compatible.
 """
 from __future__ import annotations
 
@@ -10,7 +10,6 @@ import sys
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
-from openai import OpenAI
 
 sys.path.insert(0, str(Path(__file__).parents[1] / "src"))
 from hinglish_assistant.schemas import AssistRequest, AssistResponse  # noqa: E402
@@ -21,6 +20,7 @@ app = FastAPI(title="Hinglish Assistant Inference Service", version="1.0.0")
 PARAM_MODEL = os.getenv("PARAM_MODEL_ID", "bharatgenai/Param-1-2.9B-Instruct")
 INDICTRANS_MODEL = os.getenv("INDICTRANS_MODEL_ID", "ai4bharat/indictrans2-indic-en-dist-200M")
 _xlit = _translator = _tokenizer = _processor = None
+_param_model = _param_tokenizer = None
 
 
 def transliterate_hindi(text: str) -> str:
@@ -54,17 +54,53 @@ def translate_hindi_to_english(text: str) -> str:
     return normalize_text(_processor.postprocess_batch(decoded, lang="eng_Latn")[0])
 
 
+def load_param_model() -> None:
+    """Load the custom Param-1 architecture through Transformers, not vLLM."""
+    global _param_model, _param_tokenizer
+    if _param_model is not None:
+        return
+    import torch
+    from transformers import AutoModelForCausalLM, AutoTokenizer
+
+    if not torch.cuda.is_available():
+        raise RuntimeError("Param-1 requires a CUDA GPU. Select a GPU runtime in Colab.")
+    _param_tokenizer = AutoTokenizer.from_pretrained(PARAM_MODEL, trust_remote_code=False)
+    _param_model = AutoModelForCausalLM.from_pretrained(
+        PARAM_MODEL,
+        trust_remote_code=True,
+        torch_dtype=torch.float16,
+        device_map="auto",
+        low_cpu_mem_usage=True,
+    ).eval()
+
+
 def rewrite_hindi(text: str) -> str:
-    client = OpenAI(base_url=os.getenv("PARAM_API_BASE", "http://127.0.0.1:8000/v1"), api_key="unused")
-    message = (
-        "Rewrite this Hindi sentence in natural standard Hindi. Preserve its meaning, names, numbers, "
-        "punctuation, and intentional English technical terms. Return only the rewritten Hindi sentence.\n\n"
-        f"Input: {text}"
-    )
-    response = client.chat.completions.create(
-        model=PARAM_MODEL, messages=[{"role": "user", "content": message}], temperature=0.1, max_tokens=256
-    )
-    answer = normalize_text(response.choices[0].message.content or "")
+    load_param_model()
+    import torch
+
+    conversation = [
+        {
+            "role": "system",
+            "content": (
+                "Rewrite Hindi into natural standard Hindi. Preserve meaning, names, numbers, punctuation, "
+                "and intentional English technical terms. Return only the rewritten Hindi sentence."
+            ),
+        },
+        {"role": "user", "content": text},
+    ]
+    inputs = _param_tokenizer.apply_chat_template(
+        conversation, return_tensors="pt", add_generation_prompt=True
+    ).to(_param_model.device)
+    with torch.inference_mode():
+        output = _param_model.generate(
+            inputs,
+            max_new_tokens=256,
+            do_sample=False,
+            eos_token_id=_param_tokenizer.eos_token_id,
+            use_cache=True,
+        )
+    generated_tokens = output[0][inputs.shape[-1] :]
+    answer = normalize_text(_param_tokenizer.decode(generated_tokens, skip_special_tokens=True))
     if not answer:
         raise RuntimeError("Param-1 returned an empty rewrite")
     return answer
