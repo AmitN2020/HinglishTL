@@ -110,16 +110,100 @@ Rather than presenting a single translation, the system translates both the raw 
 
 ## Evaluation Protocol
 
-The repository benchmarks 40 representative held-out cases committed in `data/evaluation_cases.json`. The suite deliberately covers spelling variations, ambiguous Roman spellings, English code-switching, named entities, numbers, punctuation, slang, questions, polite requests, long complex sentences, and colloquial speech.
+To rigorously evaluate the multi-stage pipeline, we established a comprehensive benchmarking protocol combining automated character- and word-level distance metrics, n-gram corpus translation overlap, and structured human qualitative review.
 
-For each run, `scripts/evaluate.py` records model predictions and computes:
+### 1. Benchmark Dataset Design & Linguistic Stratification
+The evaluation suite comprises 40 representative held-out test cases committed in [`data/evaluation_cases.json`](file:///c:/stuff/HinglishTL/data/evaluation_cases.json). Rather than relying on synthetic or homogenous sentence pairs, the benchmark is deliberately stratified across four linguistic dimensions spanning 18 distinct challenge categories:
 
-| Measure | Meaning |
-|---|---|
-| **CER** | Character-level edit distance divided by reference character length; lower is better. |
-| **Word Accuracy** | $\max(0, 1 − \text{word error rate})$ after Unicode/whitespace normalization; higher is better. |
-| **BLEU** | SacreBLEU corpus score against committed English references, computed separately for raw and polished Hindi; higher is better. |
-| **Human Adequacy & Fluency** | Human review on a 1–5 scale evaluating semantic retention (adequacy) and grammatical naturalness (fluency). |
+```mermaid
+flowchart TD
+    Bench["40-Case Evaluation Benchmark"]
+    
+    subgraph D1["1. Orthographic & Phonological Variance"]
+        Bench --> C1["basic (T01-T02): Canonical high-frequency sentences"]
+        Bench --> C2["spelling_variant (T03-T04): Non-standard Roman vowels (jayegi vs jaegi)"]
+        Bench --> C3["ambiguity (T05-T06): Multi-sense phonetic tokens (kal = yesterday/tomorrow)"]
+        Bench --> C4["romanization (T31-T32): Variable consonant mappings (shukriya, help)"]
+    end
+
+    subgraph D2["2. Lexical & Code-Mixing Challenges"]
+        Bench --> C5["code_switch (T07-T09): Interleaved technical entities (Google Drive, PDF, low battery)"]
+        Bench --> C6["mixed_english (T37-T38): High-density English loan syntax (deadline, wifi, research paper)"]
+        Bench --> C7["named_entity (T10-T12): Indian proper nouns and acronyms (Priyanka, IIT Bombay, Rohit Sharma)"]
+        Bench --> C8["numerals (T13-T15): Digit preservation in currency, time, and IDs (5 baje, 2500 rupaye, 23)"]
+        Bench --> C9["slang & colloquial (T18-T20, T39-T40): Informal Hindi idioms (yaar, mast, scene, tension)"]
+    end
+
+    subgraph D3["3. Morphosyntactic & Speech Acts"]
+        Bench --> C10["politeness & request (T21-T24): Honorific elevation (sir please, dhanyavaad, kripya)"]
+        Bench --> C11["imperative & negation (T25-T26, T35-T36): Command forms and negative clauses (mat bolna, band kar dena)"]
+        Bench --> C12["question (T27-T28): Interrogative structures and missing question markers (tumne lunch kiya kya)"]
+        Bench --> C13["emotion (T33-T34): Affective and psychological states (khushi hui, stressed feel)"]
+    end
+
+    subgraph D4["4. Syntactic Complexity & Discourse"]
+        Bench --> C14["punctuation (T16-T17): Ellipses, commas, and expressive punctuation (arey!, haan...)"]
+        Bench --> C15["long_input (T29-T30): Multi-clause compound coordination (>20 words)"]
+    end
+```
+
+Each benchmark item pairs the Roman Hinglish input with two independently validated gold references:
+1. **Reference Devanagari Hindi**: Native orthographic standard target.
+2. **Reference English Translation**: Professional semantic translation capturing intentional register and pragmatic intent.
+
+---
+
+### 2. Quantitative Evaluation Metrics
+
+All predictions are preprocessed through Unicode NFC normalization and consecutive whitespace collapsing prior to metric computation:
+
+#### A. Character Error Rate (CER)
+Character Error Rate evaluates transliteration fidelity at the grapheme level, computing the minimum character-level Levenshtein edit distance (substitutions $S$, deletions $D$, and insertions $I$) divided by the length of the reference string $N_{\text{ref}}$:
+$$\text{CER}(P, R) = \frac{S_{\text{char}} + D_{\text{char}} + I_{\text{char}}}{N_{\text{ref}}}$$
+A lower CER indicates higher character-level transcription fidelity.
+
+#### B. Word Accuracy (WA)
+To capture word-level lexical alignment without unbounded negative penalties, Word Accuracy is calculated as the clipped complement of the Word Error Rate (WER):
+$$\text{Word Accuracy}(P, R) = \max\left(0, 1 - \frac{\text{Levenshtein}_{\text{word}}(P, R)}{\text{Length}_{\text{words}}(R)}\right)$$
+This bounds the metric in the interval $[0.0, 1.0]$, rewarding exact lexical matches and penalizing missegmented or omitted words.
+
+#### C. Corpus SacreBLEU
+Translation quality is evaluated using standard SacreBLEU with effective order smoothing:
+$$\text{BLEU} = \text{BP} \cdot \exp\left(\sum_{n=1}^4 w_n \log p_n\right)$$
+where $\text{BP} = \min\left(1, e^{1 - r/c}\right)$ is the brevity penalty comparing reference length $r$ and candidate length $c$, and $p_n$ represents cumulative modified $n$-gram precision up to 4-grams ($w_n = 0.25$).
+
+#### D. Dual-Path Comparative Protocol
+A core feature of our experimental design is the **dual-path translation evaluation**:
+- $\text{BLEU}_{\text{raw}} = \text{BLEU}(T(\text{Raw Devanagari}), \text{Reference English})$
+- $\text{BLEU}_{\text{polished}} = \text{BLEU}(T(\text{Polished Devanagari}), \text{Reference English})$
+
+Comparing these two scores isolates whether stylistic rewriting by the LLM alters underlying propositional content or introduces lexical variations that diverge from literal colloquial references.
+
+---
+
+### 3. Human Qualitative Evaluation Rubric
+
+Because n-gram overlap metrics penalize legitimate syntactic variations, each generated English translation was independently reviewed across two 5-point Likert scales:
+
+| Score | Adequacy (Meaning Preservation) | Fluency (Grammatical Naturalness) |
+|:---:|---|---|
+| **5** | **Complete Preservation**: All propositional content, numbers, entities, and intentional nuances perfectly conveyed. | **Flawless**: Native-level phrasing, impeccable syntax, and natural sentence rhythm. |
+| **4** | **Near Complete**: Core message fully intact; negligible omission or minor stylistic rephrasing. | **Good**: Grammatically correct; slight stiffness or non-native phrasing that does not impede comprehension. |
+| **3** | **Partial Preservation**: Core intent discernible, but noticeable loss of modifier, tense shift, or awkward translation. | **Fair**: Noticeable grammatical irregularities, missing punctuation, or awkward word ordering. |
+| **2** | **Substantial Distortion**: Essential facts or named entities misstated or hallucinated. | **Poor**: Severely fragmented, broken grammar, requiring effort to decipher. |
+| **1** | **Completely Inaccurate**: Incoherent, contradictory, or completely unrelated to source message. | **Unintelligible**: Total syntactic breakdown; nonsensical word salad. |
+
+Every review entry additionally records an explanatory `reviewer_note` in [`artifacts/evaluation_predictions.json`](file:///c:/stuff/HinglishTL/artifacts/evaluation_predictions.json) cataloging the linguistic reason for any deduction (e.g., entity hallucination, idiom misinterpretation, or over-formalization).
+
+---
+
+### 4. Automated Execution Harness
+
+The evaluation pipeline is automated via [`scripts/evaluate.py`](file:///c:/stuff/HinglishTL/scripts/evaluate.py):
+1. **Live Query Execution**: Loads `data/evaluation_cases.json`, initiates HTTP requests against the live `/assist` endpoint with `timeout=90s`, and captures all intermediate outputs.
+2. **Metric Aggregation**: Computes overall and category-level CER, Word Accuracy, and paired BLEU scores.
+3. **Artifact Generation**: Serializes full predictions to `artifacts/evaluation_predictions.json` and metric summaries to `artifacts/evaluation_report.json`.
+4. **CI/CD Unit Testing**: Complemented by 10 deterministic unit tests in [`tests/`](file:///c:/stuff/HinglishTL/tests) validating character metric boundary conditions, whitespace invariance, oversize input rejection, and transliteration mock adapters.
 
 ---
 
