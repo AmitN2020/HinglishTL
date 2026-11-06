@@ -63,11 +63,14 @@ def load_translation_model() -> None:
     global _translator, _tokenizer, _processor
     if _translator is not None:
         return
-    from IndicTransToolkit import IndicProcessor
+    # The toolkit exposes IndicProcessor from its processor module.
+    from IndicTransToolkit.processor import IndicProcessor
     from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
 
     _tokenizer = AutoTokenizer.from_pretrained(INDICTRANS_MODEL, trust_remote_code=True)
-    _translator = AutoModelForSeq2SeqLM.from_pretrained(INDICTRANS_MODEL, trust_remote_code=True).cuda()
+    _translator = AutoModelForSeq2SeqLM.from_pretrained(
+        INDICTRANS_MODEL, trust_remote_code=True, torch_dtype="auto"
+    ).cuda()
     _processor = IndicProcessor(inference=True)
 
 

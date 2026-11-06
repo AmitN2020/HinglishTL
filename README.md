@@ -31,7 +31,9 @@ The UI includes examples and shows raw transliteration, polished Hindi, and sepa
 
 ## Colab inference service
 
-Use a GPU runtime. Install `backend/requirements.txt`, clone this repository, then start the single inference service:
+Use a GPU runtime and accept the access conditions for the gated [IndicTrans2 checkpoint](https://huggingface.co/ai4bharat/indictrans2-indic-en-dist-200M) while logged into Hugging Face. The reproducible path is the [Colab notebook](notebooks/hinglish_assistant_colab.ipynb), which installs, authenticates, starts, warms up, and tunnels the service.
+
+To start it manually, install `backend/requirements.txt`, clone this repository, then start the single inference service:
 
 ```bash
 pip install -r backend/requirements.txt
@@ -40,7 +42,7 @@ uvicorn backend.server:app --host 0.0.0.0 --port 7860
 
 Expose port 7860 with the tunnel permitted by your Colab environment. Put its HTTPS URL in `SERVICE_BASE_URL`. Confirm `GET /health` before running the Streamlit UI. Tunnel URLs and any tokens are secrets: keep them out of Git.
 
-> The service calls AI4Bharat's hosted IndicXlit API for transliteration, avoiding the legacy local package stack. It loads Param-1 directly through Transformers because its custom architecture is not supported by vLLM. The first request downloads and loads the models, so allow several minutes before expecting a response. The default IndicTrans2 checkpoint is the smaller distilled Indic→English model, chosen for a practical course demo.
+> The service calls AI4Bharat's hosted IndicXlit API for transliteration, avoiding the legacy local package stack. It loads Param-1 directly through Transformers. The first request downloads and loads the models, so allow several minutes before expecting a response. The default IndicTrans2 checkpoint is the smaller distilled Indic→English model, chosen for a practical course demo.
 
 ## Evaluation
 
