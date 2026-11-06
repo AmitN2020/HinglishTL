@@ -45,7 +45,6 @@ def main() -> None:
             ).__dict__
             for name, rows in by_category.items()
         },
-        "human_review_instruction": "For each row, add adequacy_1_to_5, fluency_1_to_5, and reviewer_note to the predictions file.",
     }
     artifacts = ROOT / "artifacts"
     artifacts.mkdir(exist_ok=True)

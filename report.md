@@ -6,7 +6,7 @@ Code-mixed Hindi-English written in the Latin script (*Roman Hinglish*) has beco
 
 The architecture decouples lightweight client interaction from compute-intensive neural execution: a local Streamlit interface communicates over an authenticated tunnel with a GPU-backed FastAPI inference backend. The inference engine chains three specialized models: (1) an adaptive phonetic transliteration engine powered by AI4Bharat IndicXlit with automated high-availability fallback; (2) **BharatGen Param-1-2.9B-Instruct**, a bilingual foundation model providing constrained, meaning-preserving register elevation and punctuation restoration; and (3) **AI4Bharat IndicTrans2-200M**, generating dual English translations from both raw and polished variants. 
 
-Evaluated across a benchmark of 40 curated test cases spanning 18 sociolinguistic challenge categories, the system achieves a Character Error Rate (CER) of **15.22%**, word accuracy of **76.21%**, raw translation BLEU of **50.54**, and polished translation BLEU of **44.15**, accompanied by independent human evaluation scores of **4.58 / 5.0** for adequacy and **4.65 / 5.0** for fluency.
+Evaluated across a benchmark of 40 curated test cases spanning 18 sociolinguistic challenge categories, the system achieves a Character Error Rate (CER) of **15.22%**, word accuracy of **76.21%**, raw translation BLEU of **50.54**, and polished translation BLEU of **44.15**.
 
 ---
 
@@ -110,7 +110,7 @@ Rather than presenting a single translation, the system translates both the raw 
 
 ## Evaluation Protocol
 
-To rigorously evaluate the multi-stage pipeline, we established a comprehensive benchmarking protocol combining automated character- and word-level distance metrics, n-gram corpus translation overlap, and structured human qualitative review.
+To rigorously evaluate the multi-stage pipeline, we established a comprehensive benchmarking protocol combining automated character- and word-level distance metrics and n-gram corpus translation overlap.
 
 ### 1. Benchmark Dataset Design & Linguistic Stratification
 The evaluation suite comprises 40 representative held-out test cases committed in [`data/evaluation_cases.json`](file:///c:/stuff/HinglishTL/data/evaluation_cases.json). Rather than relying on synthetic or homogenous sentence pairs, the benchmark is deliberately stratified across four linguistic dimensions spanning 18 distinct challenge categories:
@@ -181,23 +181,7 @@ Comparing these two scores isolates whether stylistic rewriting by the LLM alter
 
 ---
 
-### 3. Human Qualitative Evaluation Rubric
-
-Because n-gram overlap metrics penalize legitimate syntactic variations, each generated English translation was independently reviewed across two 5-point Likert scales:
-
-| Score | Adequacy (Meaning Preservation) | Fluency (Grammatical Naturalness) |
-|:---:|---|---|
-| **5** | **Complete Preservation**: All propositional content, numbers, entities, and intentional nuances perfectly conveyed. | **Flawless**: Native-level phrasing, impeccable syntax, and natural sentence rhythm. |
-| **4** | **Near Complete**: Core message fully intact; negligible omission or minor stylistic rephrasing. | **Good**: Grammatically correct; slight stiffness or non-native phrasing that does not impede comprehension. |
-| **3** | **Partial Preservation**: Core intent discernible, but noticeable loss of modifier, tense shift, or awkward translation. | **Fair**: Noticeable grammatical irregularities, missing punctuation, or awkward word ordering. |
-| **2** | **Substantial Distortion**: Essential facts or named entities misstated or hallucinated. | **Poor**: Severely fragmented, broken grammar, requiring effort to decipher. |
-| **1** | **Completely Inaccurate**: Incoherent, contradictory, or completely unrelated to source message. | **Unintelligible**: Total syntactic breakdown; nonsensical word salad. |
-
-Every review entry additionally records an explanatory `reviewer_note` in [`artifacts/evaluation_predictions.json`](file:///c:/stuff/HinglishTL/artifacts/evaluation_predictions.json) cataloging the linguistic reason for any deduction (e.g., entity hallucination, idiom misinterpretation, or over-formalization).
-
----
-
-### 4. Automated Execution Harness
+### 3. Automated Execution Harness
 
 The evaluation pipeline is automated via [`scripts/evaluate.py`](file:///c:/stuff/HinglishTL/scripts/evaluate.py):
 1. **Live Query Execution**: Loads `data/evaluation_cases.json`, initiates HTTP requests against the live `/assist` endpoint with `timeout=90s`, and captures all intermediate outputs.
@@ -218,8 +202,6 @@ The benchmark was executed against the live GPU service:
 | Transliteration word accuracy | **0.7621** (76.21%) |
 | Raw-Hindi English BLEU | **50.54** |
 | Polished-Hindi English BLEU | **44.15** |
-| Mean human adequacy / 5 | **4.58 / 5.0** |
-| Mean human fluency / 5 | **4.65 / 5.0** |
 
 ---
 
@@ -262,7 +244,6 @@ The benchmark was executed against the live GPU service:
 - **Raw-Hindi English BLEU (50.54) vs. Polished-Hindi English BLEU (44.15)**:
   - Raw Hindi translation scored higher on corpus BLEU because the reference sentences were authored as close, informal equivalents of the original input (e.g., `Brother had a great presentation`).
   - Polished Hindi produced higher-register, formal sentences (`Brother, it was a great performance`), introducing legitimate lexical variations that are stylistically superior but penalized by strict n-gram matching against colloquial references.
-  - Human review confirmed high adequacy (**4.58 / 5.0**) and fluency (**4.65 / 5.0**) across polished translations.
 
 ---
 
