@@ -145,6 +145,9 @@ def load_param_model() -> None:
 
     logger.info("Loading Param-1 model: %s", PARAM_MODEL)
     _param_tokenizer = AutoTokenizer.from_pretrained(PARAM_MODEL, trust_remote_code=False)
+    if _param_tokenizer.pad_token_id is None:
+        _param_tokenizer.pad_token_id = _param_tokenizer.eos_token_id
+
     _param_model = AutoModelForCausalLM.from_pretrained(
         PARAM_MODEL,
         trust_remote_code=True,
@@ -152,6 +155,37 @@ def load_param_model() -> None:
         device_map="auto",
         low_cpu_mem_usage=True,
     ).eval()
+
+    # The custom Param-1 architecture uses legacy KV tuples incompatible with
+    # modern transformers DynamicCache (which causes AttributeError: 'NoneType' object has no attribute 'shape').
+    _param_model.config.use_cache = False
+    if hasattr(_param_model, "generation_config") and _param_model.generation_config is not None:
+        _param_model.generation_config.use_cache = False
+    _param_model._supports_cache_class = False
+
+    # Guard monkey-patch: sanitize past_key_values if any is passed with None elements
+    orig_forward = _param_model.model.forward
+
+    def safe_forward(*args, **kwargs):
+        if "past_key_values" in kwargs:
+            pkv = kwargs["past_key_values"]
+            if pkv is not None:
+                try:
+                    if len(pkv) == 0 or pkv[0] is None or pkv[0][0] is None:
+                        kwargs["past_key_values"] = None
+                except Exception:
+                    kwargs["past_key_values"] = None
+        elif len(args) > 3:
+            pkv = args[3]
+            if pkv is not None:
+                try:
+                    if len(pkv) == 0 or pkv[0] is None or pkv[0][0] is None:
+                        args = args[:3] + (None,) + args[4:]
+                except Exception:
+                    args = args[:3] + (None,) + args[4:]
+        return orig_forward(*args, **kwargs)
+
+    _param_model.model.forward = safe_forward
 
 
 def rewrite_hindi(text: str) -> str:
@@ -168,18 +202,21 @@ def rewrite_hindi(text: str) -> str:
         },
         {"role": "user", "content": text},
     ]
-    inputs = _param_tokenizer.apply_chat_template(
-        conversation, return_tensors="pt", add_generation_prompt=True
-    ).to(_param_model.device)
+    chat_text = _param_tokenizer.apply_chat_template(
+        conversation, tokenize=False, add_generation_prompt=True
+    )
+    model_inputs = _param_tokenizer([chat_text], return_tensors="pt").to(_param_model.device)
     with torch.inference_mode():
         output = _param_model.generate(
-            inputs,
+            **model_inputs,
             max_new_tokens=256,
             do_sample=False,
             eos_token_id=_param_tokenizer.eos_token_id,
-            use_cache=True,
+            pad_token_id=_param_tokenizer.pad_token_id or _param_tokenizer.eos_token_id,
+            use_cache=False,
         )
-    generated_tokens = output[0][inputs.shape[-1] :]
+    input_len = model_inputs["input_ids"].shape[-1]
+    generated_tokens = output[0][input_len:]
     answer = normalize_text(_param_tokenizer.decode(generated_tokens, skip_special_tokens=True))
     if not answer:
         raise RuntimeError("Param-1 returned an empty rewrite")
