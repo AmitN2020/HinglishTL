@@ -10,7 +10,7 @@ A college LLM-course mini project that turns Roman-script Hinglish into Hindi De
 | Writing improvement | BharatGen Param-1-2.9B-Instruct | Meaning-preserving natural Hindi rewrite |
 | Translation | AI4Bharat IndicTrans2 Indic→English distilled 200M | Hindi → English |
 
-The application is deliberately split into a local Streamlit UI and a GPU-backed Colab FastAPI service. This keeps the demo laptop light while still using the stated pretrained models end-to-end.
+The application is deliberately split into a local Streamlit UI and a GPU-backed Colab FastAPI service. This keeps the demo laptop light while still using the stated pretrained models end-to-end. Transliteration calls AI4Bharat's hosted IndicXlit API; Param-1 and IndicTrans2 run in Colab.
 
 ## Quick start
 
@@ -40,7 +40,7 @@ uvicorn backend.server:app --host 0.0.0.0 --port 7860
 
 Expose port 7860 with the tunnel permitted by your Colab environment. Put its HTTPS URL in `SERVICE_BASE_URL`. Confirm `GET /health` before running the Streamlit UI. Tunnel URLs and any tokens are secrets: keep them out of Git.
 
-> The service loads Param-1 directly through Transformers because its custom architecture is not supported by vLLM. The first request downloads and loads the models, so allow several minutes before expecting a response. The default IndicTrans2 checkpoint is the smaller distilled Indic→English model, chosen for a practical course demo.
+> The service calls AI4Bharat's hosted IndicXlit API for transliteration, avoiding the legacy local package stack. It loads Param-1 directly through Transformers because its custom architecture is not supported by vLLM. The first request downloads and loads the models, so allow several minutes before expecting a response. The default IndicTrans2 checkpoint is the smaller distilled Indic→English model, chosen for a practical course demo.
 
 ## Evaluation
 
